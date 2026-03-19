@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
 from typing import List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class Fan(BaseModel):
@@ -41,7 +42,7 @@ class BlockEvent(BaseModel):
 
 class Summary(BaseModel):
     model: str = "Antminer S19i"
-    firmware: str = "S19i-OS 0.1.0"
+    firmware: str = "S19i-OS 0.2.1"
     uptime_sec: int
     state: str
     current_hashrate_ths: float

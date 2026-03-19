@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from models import Summary, Fan, Board, Pool, BlockEvent
+
+from models import BlockEvent, Board, Fan, Pool, Summary
 
 STAGING_DIR = Path("/tmp/s19i-os-staging")
+APPLY_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "apply_update.sh"
 
 
 def _now() -> str:
@@ -30,15 +33,38 @@ class MetricStore:
                 best_share_at_found=18234567890.0,
                 status="confirmed",
             ),
-            fans=[Fan(id=1, rpm=6120), Fan(id=2, rpm=5980), Fan(id=3, rpm=6050), Fan(id=4, rpm=6010)],
+            fans=[
+                Fan(id=1, rpm=6120),
+                Fan(id=2, rpm=5980),
+                Fan(id=3, rpm=6050),
+                Fan(id=4, rpm=6010),
+            ],
             boards=[
                 Board(id=1, chips=76, temp_c=68.0, freq_mhz=520.0, voltage_mv=1320, hashrate_ths=31.8, status="ok"),
                 Board(id=2, chips=76, temp_c=69.5, freq_mhz=520.0, voltage_mv=1320, hashrate_ths=31.6, status="ok"),
                 Board(id=3, chips=76, temp_c=67.4, freq_mhz=520.0, voltage_mv=1320, hashrate_ths=32.0, status="ok"),
             ],
             pools=[
-                Pool(id=1, url="stratum+tcp://pool.example:3333", user="wallet.worker", status="alive", active=True, accepted=10234, rejected=22, stale=3),
-                Pool(id=2, url="stratum+tcp://backup.example:3333", user="wallet.worker", status="standby", active=False, accepted=0, rejected=0, stale=0),
+                Pool(
+                    id=1,
+                    url="stratum+tcp://pool.example:3333",
+                    user="wallet.worker",
+                    status="alive",
+                    active=True,
+                    accepted=10234,
+                    rejected=22,
+                    stale=3,
+                ),
+                Pool(
+                    id=2,
+                    url="stratum+tcp://backup.example:3333",
+                    user="wallet.worker",
+                    status="standby",
+                    active=False,
+                    accepted=0,
+                    rejected=0,
+                    stale=0,
+                ),
             ],
         )
         self.blocks = [self.summary.last_found_block] if self.summary.last_found_block else []
@@ -50,7 +76,7 @@ class MetricStore:
         }
         self.firmware_status = {
             "model": "Antminer S19i",
-            "current_version": "S19i-OS 0.2.0",
+            "current_version": "S19i-OS 0.2.1",
             "state": "idle",
             "staged_filename": None,
             "staged_size": 0,
@@ -83,18 +109,21 @@ class MetricStore:
         return self.firmware_status
 
     def validate_firmware_meta(self, payload: dict):
-        target_model = payload.get("model")
+        target_model = payload.get("target_model") or payload.get("model")
+        ok = target_model in {None, "Antminer S19i"}
         return {
-            "ok": target_model in {None, "Antminer S19i"},
+            "ok": ok,
             "expected_model": "Antminer S19i",
             "received_model": target_model,
-            "message": "Model accepted" if target_model in {None, "Antminer S19i"} else "Wrong target model",
+            "message": "Model accepted" if ok else "Wrong target model",
         }
 
     async def stage_firmware(self, upload_file):
         STAGING_DIR.mkdir(parents=True, exist_ok=True)
-        target = STAGING_DIR / upload_file.filename
+        safe_name = Path(upload_file.filename or "update.tar.gz").name
+        target = STAGING_DIR / safe_name
         total = 0
+
         with target.open("wb") as f:
             while True:
                 chunk = await upload_file.read(1024 * 1024)
@@ -103,22 +132,65 @@ class MetricStore:
                 total += len(chunk)
                 f.write(chunk)
 
-        self.firmware_status.update({
-            "state": "staged",
-            "staged_filename": upload_file.filename,
-            "staged_size": total,
-            "message": "Firmware uploaded to staging. Ready for validation/apply.",
-            "updated_at": _now(),
-        })
+        self.firmware_status.update(
+            {
+                "state": "staged",
+                "staged_filename": safe_name,
+                "staged_size": total,
+                "message": "Firmware uploaded to staging. Ready for validation/apply.",
+                "updated_at": _now(),
+            }
+        )
         return {"ok": True, **self.firmware_status}
 
     def apply_staged_firmware(self):
-        if not self.firmware_status.get("staged_filename"):
+        staged_filename = self.firmware_status.get("staged_filename")
+        if not staged_filename:
             return {"ok": False, "message": "No staged firmware package"}
 
-        self.firmware_status.update({
-            "state": "apply-pending",
-            "message": "Here the real S19i apply script should stop miner, switch to maintenance mode, unpack package and schedule reboot.",
-            "updated_at": _now(),
-        })
+        pkg_path = STAGING_DIR / staged_filename
+        if not pkg_path.exists():
+            self.firmware_status.update(
+                {
+                    "state": "error",
+                    "message": f"Staged package not found: {pkg_path}",
+                    "updated_at": _now(),
+                }
+            )
+            return {"ok": False, **self.firmware_status}
+
+        if not APPLY_SCRIPT.exists():
+            self.firmware_status.update(
+                {
+                    "state": "error",
+                    "message": f"Apply script not found: {APPLY_SCRIPT}",
+                    "updated_at": _now(),
+                }
+            )
+            return {"ok": False, **self.firmware_status}
+
+        result = subprocess.run(
+            ["bash", str(APPLY_SCRIPT), str(pkg_path)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        if result.returncode != 0:
+            self.firmware_status.update(
+                {
+                    "state": "error",
+                    "message": (result.stderr or result.stdout or "Update failed").strip(),
+                    "updated_at": _now(),
+                }
+            )
+            return {"ok": False, **self.firmware_status}
+
+        self.firmware_status.update(
+            {
+                "state": "applied",
+                "message": (result.stdout or "Update applied").strip(),
+                "updated_at": _now(),
+            }
+        )
         return {"ok": True, **self.firmware_status}

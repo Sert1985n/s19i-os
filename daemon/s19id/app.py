@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, File, UploadFile
+
 from store import MetricStore
 
 store = MetricStore()
-app = FastAPI(title="S19i-OS API", version="0.2.0")
+app = FastAPI(title="S19i-OS API", version="0.2.1")
 
 
 @app.get("/api/v1/summary")
