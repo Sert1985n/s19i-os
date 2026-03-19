@@ -1,0 +1,88 @@
+openapi: 3.0.3
+info:
+  title: S19i-OS API
+  version: 0.2.0
+paths:
+  /api/v1/summary:
+    get:
+      summary: Summary dashboard
+      responses:
+        '200':
+          description: OK
+  /api/v1/chains:
+    get:
+      summary: Chain and board state
+      responses:
+        '200':
+          description: OK
+  /api/v1/pools:
+    get:
+      summary: Pool list
+      responses:
+        '200':
+          description: OK
+  /api/v1/best-share:
+    get:
+      summary: BestShare data
+      responses:
+        '200':
+          description: OK
+  /api/v1/blocks:
+    get:
+      summary: Found blocks history
+      responses:
+        '200':
+          description: OK
+  /api/v1/settings:
+    get:
+      summary: Current settings
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Update settings
+      responses:
+        '200':
+          description: Updated
+  /api/v1/miner/restart:
+    post:
+      summary: Restart miner process
+      responses:
+        '200':
+          description: Restart triggered
+  /api/v1/miner/pause:
+    post:
+      summary: Pause hashing
+      responses:
+        '200':
+          description: Miner paused
+  /api/v1/miner/resume:
+    post:
+      summary: Resume hashing
+      responses:
+        '200':
+          description: Miner resumed
+  /api/v1/firmware/status:
+    get:
+      summary: Firmware updater status
+      responses:
+        '200':
+          description: OK
+  /api/v1/firmware/check:
+    post:
+      summary: Validate firmware manifest and current model compatibility
+      responses:
+        '200':
+          description: Validation result
+  /api/v1/firmware/upload:
+    post:
+      summary: Upload firmware package to staging
+      responses:
+        '200':
+          description: Uploaded to staging
+  /api/v1/firmware/apply:
+    post:
+      summary: Apply staged firmware package
+      responses:
+        '200':
+          description: Apply started
